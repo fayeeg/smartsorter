@@ -4,89 +4,99 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Smart Sorter</title>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 <style>
   body { font-family: sans-serif; text-align: center; margin: 0; padding: 0; background: #f4f4f4; }
-  h2 { background: #2196f3; color: white; padding: 10px; margin: 0; }
-  button { margin: 10px; padding: 10px 20px; font-size: 1em; }
+  h2 { background: #2196f3; color: white; padding: 10px; margin: 0; font-size: 1.2em; }
+  button { margin: 10px; padding: 10px 20px; font-size: 1em; border: none; border-radius: 5px; background: #4caf50; color: white; cursor: pointer; }
+  button:hover { background: #45a049; }
   #webcam-container { margin-top: 10px; }
   video, canvas { max-width: 100%; height: auto; }
   #label-container div { font-size: 1.2em; margin-top: 5px; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
 </head>
 <body>
 
 <h2>Teachable Machine → ESP32</h2>
-<button onclick="init()">Start Camera & Model</button>
-<button onclick="connectBLE()">Connect to ESP32</button>
+<button id="startBtn">Start Camera & Model</button>
+<button id="bleBtn">Connect to ESP32</button>
 <div id="webcam-container"></div>
 <div id="label-container"></div>
 
 <script>
-const URL = "https://teachablemachine.withgoogle.com/models/6r-o5nbpb/"; // Change to your model URL
-let model, webcam, labelContainer, maxPredictions;
-let bleDevice, bleCharacteristic;
+window.onload = function() {
+    const URL = "https://teachablemachine.withgoogle.com/models/6r-o5nbpb/"; // Change to your model URL
+    let model, webcam, labelContainer, maxPredictions;
+    let bleDevice, bleCharacteristic;
 
-async function init() {
-    const modelURL = URL + "model.json";
-    const metadataURL = URL + "metadata.json";
-    model = await tmImage.load(modelURL, metadataURL);
-    maxPredictions = model.getTotalClasses();
+    document.getElementById("startBtn").onclick = init;
+    document.getElementById("bleBtn").onclick = connectBLE;
 
-    const flip = true; // flip webcam for selfie mode
-    webcam = new tmImage.Webcam(200, 200, flip);
-    await webcam.setup({ facingMode: "environment" }); // Use back camera on mobile if available
-    await webcam.play();
-    window.requestAnimationFrame(loop);
+    async function init() {
+        try {
+            const modelURL = URL + "model.json";
+            const metadataURL = URL + "metadata.json";
+            model = await tmImage.load(modelURL, metadataURL);
+            maxPredictions = model.getTotalClasses();
 
-    document.getElementById("webcam-container").appendChild(webcam.canvas);
-    labelContainer = document.getElementById("label-container");
-    for (let i = 0; i < maxPredictions; i++) {
-        labelContainer.appendChild(document.createElement("div"));
-    }
-}
+            const flip = true; 
+            webcam = new tmImage.Webcam(224, 224, flip);
+            await webcam.setup({ facingMode: "environment" }); // back camera
+            await webcam.play();
+            window.requestAnimationFrame(loop);
 
-async function loop() {
-    webcam.update();
-    await predict();
-    window.requestAnimationFrame(loop);
-}
-
-async function predict() {
-    const prediction = await model.predict(webcam.canvas);
-    let best = prediction[0];
-    for (let i = 1; i < prediction.length; i++) {
-        if (prediction[i].probability > best.probability) {
-            best = prediction[i];
+            document.getElementById("webcam-container").appendChild(webcam.canvas);
+            labelContainer = document.getElementById("label-container");
+            labelContainer.innerHTML = "";
+            for (let i = 0; i < maxPredictions; i++) {
+                labelContainer.appendChild(document.createElement("div"));
+            }
+        } catch (err) {
+            alert("Error starting camera/model: " + err);
+            console.error(err);
         }
     }
-    labelContainer.childNodes[0].innerHTML = `${best.className}: ${best.probability.toFixed(2)}`;
-    
-    if (bleCharacteristic) {
-        let msg = best.className;
-        let encoder = new TextEncoder();
-        bleCharacteristic.writeValue(encoder.encode(msg));
-    }
-}
 
-async function connectBLE() {
-    try {
-        const serviceUUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; // Change if your ESP32 uses a different UUID
-        const characteristicUUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-        
-        bleDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ services: [serviceUUID] }]
-        });
-        const server = await bleDevice.gatt.connect();
-        const service = await server.getPrimaryService(serviceUUID);
-        bleCharacteristic = await service.getCharacteristic(characteristicUUID);
-        alert("Connected to ESP32 BLE!");
-    } catch (error) {
-        console.error(error);
-        alert("BLE connection failed: " + error);
+    async function loop() {
+        webcam.update();
+        await predict();
+        window.requestAnimationFrame(loop);
     }
-}
+
+    async function predict() {
+        const prediction = await model.predict(webcam.canvas);
+        let best = prediction.reduce((prev, curr) => 
+            curr.probability > prev.probability ? curr : prev
+        );
+        labelContainer.childNodes[0].innerHTML = `${best.className}: ${best.probability.toFixed(2)}`;
+        
+        if (bleCharacteristic) {
+            let msg = best.className;
+            let encoder = new TextEncoder();
+            await bleCharacteristic.writeValue(encoder.encode(msg));
+        }
+    }
+
+    async function connectBLE() {
+        try {
+            const serviceUUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; // Nordic UART Service
+            const txUUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"; // TX (Browser -> ESP32)
+
+            bleDevice = await navigator.bluetooth.requestDevice({
+                filters: [{ services: [serviceUUID] }]
+            });
+            const server = await bleDevice.gatt.connect();
+            const service = await server.getPrimaryService(serviceUUID);
+            bleCharacteristic = await service.getCharacteristic(txUUID);
+
+            alert("Connected to ESP32 BLE!");
+        } catch (error) {
+            console.error(error);
+            alert("BLE connection failed: " + error);
+        }
+    }
+};
 </script>
 
 </body>
