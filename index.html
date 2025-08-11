@@ -3,19 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TM to ESP32 BLE</title>
+<title>Smart Sorter</title>
+
+<!-- TensorFlow.js -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+<!-- Teachable Machine Image Library -->
 <script src="https://teachablemachine.withgoogle.com/js/tmImage.js"></script>
+
+<style>
+  body { font-family: sans-serif; text-align: center; margin: 0; padding: 0; background: #f4f4f4; }
+  h2 { background: #2196f3; color: white; padding: 10px; margin: 0; }
+  button { margin: 10px; padding: 10px 20px; font-size: 1em; }
+  #webcam-container { margin-top: 10px; }
+  video, canvas { max-width: 100%; height: auto; }
+  #label-container div { font-size: 1.2em; margin-top: 5px; }
+</style>
 </head>
 <body>
-<h2>Teachable Machine → ESP32 BLE</h2>
+
+<h2>Teachable Machine → ESP32</h2>
 <button onclick="init()">Start Camera & Model</button>
 <button onclick="connectBLE()">Connect to ESP32</button>
 <div id="webcam-container"></div>
 <div id="label-container"></div>
 
 <script>
-const URL = "https://teachablemachine.withgoogle.com/models/6r-o5nbpb/"; // e.g. https://teachablemachine.withgoogle.com/models/XXXX/
+const URL = "https://teachablemachine.withgoogle.com/models/6r-o5nbpb/"; // Change to your model URL
 let model, webcam, labelContainer, maxPredictions;
 let bleDevice, bleCharacteristic;
 
@@ -25,9 +38,9 @@ async function init() {
     model = await tmImage.load(modelURL, metadataURL);
     maxPredictions = model.getTotalClasses();
 
-    const flip = true;
+    const flip = true; // flip webcam for selfie mode
     webcam = new tmImage.Webcam(200, 200, flip);
-    await webcam.setup();
+    await webcam.setup({ facingMode: "environment" }); // Use back camera on mobile if available
     await webcam.play();
     window.requestAnimationFrame(loop);
 
@@ -63,7 +76,7 @@ async function predict() {
 
 async function connectBLE() {
     try {
-        const serviceUUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; // same as ESP32
+        const serviceUUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"; // Change if your ESP32 uses a different UUID
         const characteristicUUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
         
         bleDevice = await navigator.bluetooth.requestDevice({
@@ -75,8 +88,10 @@ async function connectBLE() {
         alert("Connected to ESP32 BLE!");
     } catch (error) {
         console.error(error);
+        alert("BLE connection failed: " + error);
     }
 }
 </script>
+
 </body>
 </html>
