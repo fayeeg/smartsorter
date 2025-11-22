@@ -105,9 +105,19 @@ window.onload = function() {
             animationId = null;
         }
         
-        // Stop the webcam
+        // Stop the webcam and all media stream tracks
         if (webcam) {
+            // Stop the webcam
             await webcam.stop();
+            
+            // Get the media stream and stop all tracks
+            if (webcam.webcam && webcam.webcam.srcObject) {
+                const stream = webcam.webcam.srcObject;
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+            }
+            
+            // Remove from DOM
             const container = document.getElementById("webcam-container");
             container.innerHTML = "";
             webcam = null;
